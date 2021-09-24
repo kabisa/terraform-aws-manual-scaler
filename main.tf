@@ -20,7 +20,7 @@ module "api_gateway" {
     }
   }
 
-  tags                         = {
+  tags = {
     Name = "http-apigateway"
   }
   disable_execute_api_endpoint = false
@@ -96,20 +96,22 @@ module "lambda_function" {
   create_package         = false
   local_existing_package = "${path.module}/code/lambda.zip"
 
-  allowed_triggers      = {
+  allowed_triggers = {
     AllowExecutionFromAPIGateway = {
       service    = "apigateway"
       source_arn = "${module.api_gateway.apigatewayv2_api_execution_arn}/*/*/*"
     }
   }
   environment_variables = {
-    ASG_NAME = var.asg
+    ASG_NAME       = var.asg,
+    AUTH_USER_NAME = var.auth_user_name
+    AUTH_PASSWORD  = var.auth_password
   }
   trusted_entities = ["apigateway.amazonaws.com"]
 }
 
 resource "aws_iam_policy_attachment" "allow_autoscaling_attachment" {
   name       = "allow-autoscaling"
-  roles = [module.lambda_function.lambda_role_name]
+  roles      = [module.lambda_function.lambda_role_name]
   policy_arn = aws_iam_policy.allow_api_gateway.arn
 }
