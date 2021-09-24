@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import time
@@ -6,6 +7,8 @@ from traceback import format_exc
 import boto3
 
 client = boto3.client("autoscaling")
+auth_user_name = os.environ.get("AUTH_USER_NAME")
+auth_password = os.environ.get("AUTH_PASSWORD")
 
 
 def generate_form(min, max, current):
@@ -43,8 +46,33 @@ def generate_form(min, max, current):
     """
 
 
+def return_html(html_str, status_code=200, headers=None):
+    headers_result = {
+        "Content-Type": "text/html",
+        "Access-Control-Allow-Origin": "*",
+    }
+    if headers:
+        headers_result.update(headers)
+
+    return {
+        "statusCode": status_code,
+        "headers": headers_result,
+        "body": html_str,
+        "isBase64Encoded": False,
+    }
+
+
 def handler(event, context):
     print(json.dumps(event))
+    authorization_header = {k.lower(): v for k, v in event['headers'].items() if k.lower() == 'authorization'}
+    if header := authorization_header.get('authorization'):
+        auth_header_b64 = header.split()[1]
+        auth_header_decoded = base64.standard_b64decode(auth_header_b64).decode('utf-8')
+        request_username, request_password = auth_header_decoded.split(':')
+        if request_username != auth_user_name or request_password != auth_password:
+            return please_log_in()
+    else:
+        return please_log_in()
     try:
         desired_scale = event.get("queryStringParameters", {}).get("scale", None)
         if desired_scale is not None:
@@ -67,24 +95,17 @@ def handler(event, context):
         output = generate_form(
             min=asg["MinSize"], max=asg["MaxSize"], current=asg["DesiredCapacity"]
         )
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "text/html",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": output,
-            "isBase64Encoded": False,
-        }
+        return return_html(output)
     except Exception:
         print(format_exc())
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "text/html",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": "<html><body>Failed</body></html>",
-            "isBase64Encoded": False,
-        }
+        return return_html("<html><body>Failed</body></html>")
 
+
+def please_log_in():
+    return return_html(
+        "<html><body>Please log in</body></html>",
+        headers={
+            "WWW-Authenticate": 'Basic realm="Manual Scaler"'
+        },
+        status_code=401
+    )
