@@ -71,7 +71,9 @@ resource "aws_iam_policy" "allow_api_gateway" {
     {
       "Action": [
         "autoscaling:UpdateAutoScalingGroup",
-        "autoscaling:DescribeAutoScalingGroups"
+        "autoscaling:DescribeAutoScalingGroups",
+        "autoscaling:DescribeScheduledActions",
+        "autoscaling:PutScheduledUpdateGroupAction"
       ],
       "Resource": "*",
       "Effect": "Allow"
