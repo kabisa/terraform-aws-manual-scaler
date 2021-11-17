@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-set -e
 # https://dev.to/fferegrino/creating-an-aws-lambda-using-pipenv-2h4a
+# This script expects you have a virtual env with all libs installed already
+# it will extract the versions you've got installed and adds those to the
+# lambda zip.
+set -e
 mkdir -p build
 pip freeze > ./build/requirements.txt
 cp *.py build
