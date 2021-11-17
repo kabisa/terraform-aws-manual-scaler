@@ -73,7 +73,9 @@ resource "aws_iam_policy" "allow_api_gateway" {
         "autoscaling:UpdateAutoScalingGroup",
         "autoscaling:DescribeAutoScalingGroups",
         "autoscaling:DescribeScheduledActions",
-        "autoscaling:PutScheduledUpdateGroupAction"
+        "autoscaling:PutScheduledUpdateGroupAction",
+        "rds:AddTagsToResource",
+        "rds:RemoveTagsFromResource",
       ],
       "Resource": "*",
       "Effect": "Allow"
@@ -105,9 +107,11 @@ module "lambda_function" {
     }
   }
   environment_variables = {
-    ASG_NAME       = var.asg,
-    AUTH_USER_NAME = var.auth_user_name
-    AUTH_PASSWORD  = var.auth_password
+    ASG_NAME                   = var.asg,
+    AUTH_USER_NAME             = var.auth_user_name
+    AUTH_PASSWORD              = var.auth_password
+    RDS_SCALEDOWN_CLUSTER_ARNS = var.rds_scaledown_cluster_arns
+    RDS_SCALEDOWN_TAG          = var.rds_scaledown_tag
   }
   trusted_entities = ["apigateway.amazonaws.com"]
 }
