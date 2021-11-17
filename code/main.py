@@ -166,8 +166,9 @@ def handler(event, context):
                 AutoScalingGroupName=os.environ["ASG_NAME"],
                 DesiredCapacity=desired_scale,
             )
-            check_to_set_scale_tag_on_rds(desired_scale)
             scale_actions = extract_scale_actions_from_qry(query_params)
+            autoscale_rds = get_auto_scale_rds(scale_actions)
+            check_to_set_scale_tag_on_rds(autoscale_rds)
             asg_schedule_response = autoscaling_client.describe_scheduled_actions(
                 AutoScalingGroupName=os.environ["ASG_NAME"]
             )
@@ -217,7 +218,15 @@ def handler(event, context):
         return return_html("<html><body>Failed</body></html>")
 
 
-def check_to_set_scale_tag_on_rds(desired_scale: int):
+def get_auto_scale_rds(scale_actions) -> bool:
+    # Can we auto scale rds? 
+    # Only if the cluster is not permanently on
+    return not all(
+        scale_action["DesiredCapacity"] > 0 for scale_action in scale_actions.values()
+    )
+
+
+def check_to_set_scale_tag_on_rds(autoscale_rds: bool):
     """
     This can be used to set tags on your RDS clusters when desired scale = 0
     It wil remove that tag if the desired scale > 0
@@ -226,15 +235,13 @@ def check_to_set_scale_tag_on_rds(desired_scale: int):
 
     This is supposed to work together with the AWS Instance Scheduler
     """
-    scale_down_clusters = os.environ.get(
-        "RDS_SCALEDOWN_CLUSTER_ARNS", ""
-    ).split(",")
+    scale_down_clusters = os.environ.get("RDS_SCALEDOWN_CLUSTER_ARNS", "").split(",")
     if scale_down_clusters:
         scaledown_tag = os.environ.get("RDS_SCALEDOWN_TAG", "Schedule")
         print(f"Setting scale down tag:{scaledown_tag} to:{scale_down_clusters}")
         for rds_cluster_arn in scale_down_clusters:
             key, value = scaledown_tag.split(":")
-            if desired_scale > 0:
+            if autoscale_rds:
                 tags_response = rds_client.add_tags_to_resource(
                     ResourceName=rds_cluster_arn,
                     Tags=[{"Key": key, "Value": value}],
