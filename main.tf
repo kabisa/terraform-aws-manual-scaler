@@ -75,7 +75,7 @@ resource "aws_iam_policy" "allow_api_gateway" {
         "autoscaling:DescribeScheduledActions",
         "autoscaling:PutScheduledUpdateGroupAction",
         "rds:AddTagsToResource",
-        "rds:RemoveTagsFromResource",
+        "rds:RemoveTagsFromResource"
       ],
       "Resource": "*",
       "Effect": "Allow"
