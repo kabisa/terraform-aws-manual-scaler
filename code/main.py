@@ -222,7 +222,7 @@ def get_auto_scale_rds(scale_actions) -> bool:
     # Can we auto scale rds? 
     # Only if the cluster is not permanently on
     return not all(
-        scale_action["DesiredCapacity"] > 0 for scale_action in scale_actions.values()
+        scale_action["capacity"] > 0 for scale_action in scale_actions.values()
     )
 
 
