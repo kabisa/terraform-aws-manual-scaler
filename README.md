@@ -35,5 +35,6 @@ Building:
 ```bash
 cd code
 pipenv install
+pipenv shell
 ./build.sh
 ```
