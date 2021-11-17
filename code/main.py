@@ -231,18 +231,20 @@ def check_to_set_scale_tag_on_rds(desired_scale: int):
     ).split(",")
     if scale_down_clusters:
         scaledown_tag = os.environ.get("RDS_SCALEDOWN_TAG", "Schedule")
+        print(f"Setting scale down tag:{scaledown_tag} to:{scale_down_clusters}")
         for rds_cluster_arn in scale_down_clusters:
             key, value = scaledown_tag.split(":")
             if desired_scale > 0:
-                rds_client.add_tags_to_resource(
+                tags_response = rds_client.add_tags_to_resource(
                     ResourceName=rds_cluster_arn,
                     Tags=[{"Key": key, "Value": value}],
                 )
             else:
-                rds_client.remove_tags_from_resource(
+                tags_response = rds_client.remove_tags_from_resource(
                     ResourceName=rds_cluster_arn,
                     TagKeys=[key],
                 )
+            print(tags_response)
 
 
 def please_log_in():
