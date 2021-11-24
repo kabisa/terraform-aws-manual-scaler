@@ -167,8 +167,8 @@ def handler(event, context):
                 DesiredCapacity=desired_scale,
             )
             scale_actions = extract_scale_actions_from_qry(query_params)
-            autoscale_rds = get_auto_scale_rds(scale_actions)
-            check_to_set_scale_tag_on_rds(autoscale_rds)
+            scale_down_rds = get_scale_down_rds(scale_actions, desired_scale)
+            check_to_set_scale_down_tag_on_rds(scale_down_rds)
             asg_schedule_response = autoscaling_client.describe_scheduled_actions(
                 AutoScalingGroupName=os.environ["ASG_NAME"]
             )
@@ -218,15 +218,16 @@ def handler(event, context):
         return return_html("<html><body>Failed</body></html>")
 
 
-def get_auto_scale_rds(scale_actions) -> bool:
+def get_scale_down_rds(scale_actions, desired_scale: int) -> bool:
     # Can we auto scale rds? 
-    # Only if the cluster is not permanently on
-    return not all(
-        scale_action["capacity"] > 0 for scale_action in scale_actions.values()
+    # Only if the cluster is not permanently off
+    zero_scheduled_capacity = all(
+        scale_action["capacity"] == 0 for scale_action in scale_actions.values()
     )
+    return zero_scheduled_capacity and desired_scale == 0
 
 
-def check_to_set_scale_tag_on_rds(autoscale_rds: bool):
+def check_to_set_scale_down_tag_on_rds(scale_down: bool):
     """
     This can be used to set tags on your RDS clusters when desired scale = 0
     It wil remove that tag if the desired scale > 0
@@ -237,19 +238,24 @@ def check_to_set_scale_tag_on_rds(autoscale_rds: bool):
     """
     scale_down_clusters = os.environ.get("RDS_SCALEDOWN_CLUSTER_ARNS", "").split(",")
     if scale_down_clusters:
-        scaledown_tag = os.environ.get("RDS_SCALEDOWN_TAG", "Schedule")
-        print(f"Setting scale down tag:{scaledown_tag} to:{scale_down_clusters}")
+        scaledown_tag = os.environ.get("RDS_SCALEDOWN_TAG", "Schedule:down")
+        scaleup_tag = os.environ.get("RDS_SCALEUP_TAG", "Schedule:up")
         for rds_cluster_arn in scale_down_clusters:
-            key, value = scaledown_tag.split(":")
-            if autoscale_rds:
+            down_key, down_value = scaledown_tag.split(":")
+            up_key, up_value = scaleup_tag.split(":")
+            if down_key != up_key:
+                raise Exception("Scale down tag key should be the same as scale up tag key")
+            if scale_down:
+                print(f"Setting scale down tag:{scaledown_tag} to:{scale_down_clusters}")
                 tags_response = rds_client.add_tags_to_resource(
                     ResourceName=rds_cluster_arn,
-                    Tags=[{"Key": key, "Value": value}],
+                    Tags=[{"Key": down_key, "Value": down_value}],
                 )
             else:
-                tags_response = rds_client.remove_tags_from_resource(
+                print(f"Setting scale up tag:{scaledown_tag} to:{scale_down_clusters}")
+                tags_response = rds_client.add_tags_to_resource(
                     ResourceName=rds_cluster_arn,
-                    TagKeys=[key],
+                    Tags=[{"Key": up_key, "Value": up_value}],
                 )
             print(tags_response)
 
