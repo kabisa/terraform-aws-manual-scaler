@@ -15,7 +15,12 @@ variable "rds_scaledown_cluster_arns" {
   default     = ""
 }
 variable "rds_scaledown_tag" {
-  description = "This is the scaling tag you can set t"
+  description = "This is the scaling tag you can set to scale down"
+  type        = string
+  default     = ""
+}
+variable "rds_scaleup_tag" {
+  description = "This is the scaling tag you can set to scale up"
   type        = string
   default     = ""
 }
