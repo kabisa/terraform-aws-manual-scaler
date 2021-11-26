@@ -14,3 +14,27 @@ module "manual_scaler" {
   region      = var.region
 }
 ```
+
+### Development
+
+In the Code folder you can use the Pipfile to install the required libs.
+
+Requirements:
+- Pipenv
+```bash
+pip install pipenv
+# or
+# brew install pipenv 
+```
+- Docker
+
+With the `pipenv install` command you can then install all dependencies on your machine
+These dependencies will be used to build the Lambda zip
+
+Building:
+```bash
+cd code
+pipenv install
+pipenv shell
+./build.sh
+```

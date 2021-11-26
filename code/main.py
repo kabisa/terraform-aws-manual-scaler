@@ -9,7 +9,8 @@ from typing import List, Dict
 
 import boto3
 
-client = boto3.client("autoscaling")
+autoscaling_client = boto3.client("autoscaling")
+rds_client = boto3.client("rds")
 auth_user_name = os.environ.get("AUTH_USER_NAME")
 auth_password = os.environ.get("AUTH_PASSWORD")
 
@@ -20,12 +21,16 @@ def convert_tz(naive_dt, from_tz, to_tz):
 
 
 def utc_hour_to_ams(hour: int) -> int:
-    dt_ams = convert_tz(datetime.now().replace(hour=hour), pytz.utc, pytz.timezone("Europe/Amsterdam"))
+    dt_ams = convert_tz(
+        datetime.now().replace(hour=hour), pytz.utc, pytz.timezone("Europe/Amsterdam")
+    )
     return dt_ams.hour
 
 
 def ams_hour_to_utc(hour: int) -> int:
-    dt_utc = convert_tz(datetime.now().replace(hour=hour), pytz.timezone("Europe/Amsterdam"), pytz.utc)
+    dt_utc = convert_tz(
+        datetime.now().replace(hour=hour), pytz.timezone("Europe/Amsterdam"), pytz.utc
+    )
     return dt_utc.hour
 
 
@@ -139,11 +144,15 @@ def return_html(html_str, status_code=200, headers=None):
 
 def handler(event, context):
     print(json.dumps(event))
-    authorization_header = {k.lower(): v for k, v in event['headers'].items() if k.lower() == 'authorization'}
-    if header := authorization_header.get('authorization'):
+    authorization_header = {
+        k.lower(): v
+        for k, v in event["headers"].items()
+        if k.lower() == "authorization"
+    }
+    if header := authorization_header.get("authorization"):
         auth_header_b64 = header.split()[1]
-        auth_header_decoded = base64.standard_b64decode(auth_header_b64).decode('utf-8')
-        request_username, request_password = auth_header_decoded.split(':')
+        auth_header_decoded = base64.standard_b64decode(auth_header_b64).decode("utf-8")
+        request_username, request_password = auth_header_decoded.split(":")
         if request_username != auth_user_name or request_password != auth_password:
             return please_log_in()
     else:
@@ -152,12 +161,15 @@ def handler(event, context):
         query_params = event.get("queryStringParameters", {})
         desired_scale = query_params.get("scale", None)
         if desired_scale is not None:
-            client.update_auto_scaling_group(
+            desired_scale = int(desired_scale)
+            autoscaling_client.update_auto_scaling_group(
                 AutoScalingGroupName=os.environ["ASG_NAME"],
-                DesiredCapacity=int(desired_scale),
+                DesiredCapacity=desired_scale,
             )
             scale_actions = extract_scale_actions_from_qry(query_params)
-            asg_schedule_response = client.describe_scheduled_actions(
+            scale_down_rds = get_scale_down_rds(scale_actions, desired_scale)
+            check_to_set_scale_down_tag_on_rds(scale_down_rds)
+            asg_schedule_response = autoscaling_client.describe_scheduled_actions(
                 AutoScalingGroupName=os.environ["ASG_NAME"]
             )
             existing_scale_actions = extract_existing_scale_actions(
@@ -180,17 +192,17 @@ def handler(event, context):
                     existing_action["Recurrence"], requested_scale_action["hour"]
                 )
                 new_action["DesiredCapacity"] = requested_scale_action["capacity"]
-                client.put_scheduled_update_group_action(**new_action)
+                autoscaling_client.put_scheduled_update_group_action(**new_action)
             time.sleep(3)
             return {
                 "statusCode": 302,
                 "headers": {"Location": "/"},
                 "body": json.dumps({}),
             }
-        asg_response = client.describe_auto_scaling_groups(
+        asg_response = autoscaling_client.describe_auto_scaling_groups(
             AutoScalingGroupNames=[os.environ["ASG_NAME"]]
         )
-        asg_schedule_response = client.describe_scheduled_actions(
+        asg_schedule_response = autoscaling_client.describe_scheduled_actions(
             AutoScalingGroupName=os.environ["ASG_NAME"]
         )
         asg = asg_response["AutoScalingGroups"][0]
@@ -206,11 +218,51 @@ def handler(event, context):
         return return_html("<html><body>Failed</body></html>")
 
 
+def get_scale_down_rds(scale_actions, desired_scale: int) -> bool:
+    # Can we auto scale rds? 
+    # Only if the cluster is not permanently off
+    zero_scheduled_capacity = all(
+        scale_action["capacity"] == 0 for scale_action in scale_actions.values()
+    )
+    return zero_scheduled_capacity and desired_scale == 0
+
+
+def check_to_set_scale_down_tag_on_rds(scale_down: bool):
+    """
+    This can be used to set tags on your RDS clusters when desired scale = 0
+    It wil remove that tag if the desired scale > 0
+    This script doesn't control the "on" or "off" state of the RDS cluster.
+    It only sets the tag.
+
+    This is supposed to work together with the AWS Instance Scheduler
+    """
+    scale_down_clusters = os.environ.get("RDS_SCALEDOWN_CLUSTER_ARNS", "").split(",")
+    if scale_down_clusters:
+        scaledown_tag = os.environ.get("RDS_SCALEDOWN_TAG", "Schedule:down")
+        scaleup_tag = os.environ.get("RDS_SCALEUP_TAG", "Schedule:up")
+        for rds_cluster_arn in scale_down_clusters:
+            down_key, down_value = scaledown_tag.split(":")
+            up_key, up_value = scaleup_tag.split(":")
+            if down_key != up_key:
+                raise Exception("Scale down tag key should be the same as scale up tag key")
+            if scale_down:
+                print(f"Setting scale down tag:{scaledown_tag} to:{scale_down_clusters}")
+                tags_response = rds_client.add_tags_to_resource(
+                    ResourceName=rds_cluster_arn,
+                    Tags=[{"Key": down_key, "Value": down_value}],
+                )
+            else:
+                print(f"Setting scale up tag:{scaledown_tag} to:{scale_down_clusters}")
+                tags_response = rds_client.add_tags_to_resource(
+                    ResourceName=rds_cluster_arn,
+                    Tags=[{"Key": up_key, "Value": up_value}],
+                )
+            print(tags_response)
+
+
 def please_log_in():
     return return_html(
         "<html><body>Please log in</body></html>",
-        headers={
-            "WWW-Authenticate": 'Basic realm="Manual Scaler"'
-        },
-        status_code=401
+        headers={"WWW-Authenticate": 'Basic realm="Manual Scaler"'},
+        status_code=401,
     )
