@@ -1,5 +1,6 @@
 module "api_gateway" {
   source = "terraform-aws-modules/apigateway-v2/aws"
+  version = "~> 3.1"
 
   name          = "manual_scaler-api-gw"
   description   = "My awesome HTTP API Gateway"
